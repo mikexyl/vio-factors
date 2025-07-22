@@ -25,8 +25,8 @@ typedef SmartProjectionPoseFactor<Cal3_S2> SmartFactor;
 int main(int argc, char *argv[]) {
   Cal3_S2::shared_ptr K(new Cal3_S2(50.0, 50.0, 0.0, 50.0, 50.0));
 
-  gtsam::noiseModel::ExpandingIsotropic::shared_ptr expandingNoise =
-      gtsam::noiseModel::ExpandingIsotropic::Create(
+  gtsam::noiseModel::ExpandingIsotropic<2>::shared_ptr expandingNoise =
+      gtsam::noiseModel::ExpandingIsotropic<2>::Create(
           10); // 2D isotropic noise model
 
   auto measurementNoise =
@@ -67,9 +67,13 @@ int main(int argc, char *argv[]) {
 
   // Create smart factor with measurement from first pose only
   SmartFactor::shared_ptr smartFactor(new SmartFactor(expandingNoise, K));
-  smartFactor->add(PinholePose<Cal3_S2>(poses[0], K).project(point), X(0));
+  PinholePose<Cal3_S2> camera(poses[0], K);
+  smartFactor->add(camera.project(point), X(0));
   expandingNoise->pushSigma(1.0); // add noise for this measurement
   graph.push_back(smartFactor);
+
+  CameraSet<PinholePose<Cal3_S2>> cameras;
+  cameras.push_back(camera);
 
   // loop over remaining poses
   for (size_t i = 1; i < 5; i++) {
@@ -83,6 +87,7 @@ int main(int argc, char *argv[]) {
     // "Simulate" measurement from this pose
     PinholePose<Cal3_S2> camera(poses[i], K);
     Point2 measurement = camera.project(point);
+    cameras.push_back(camera);
     cout << "Measurement " << i << "" << measurement << endl;
 
     // Add measurement to smart factor
@@ -118,6 +123,8 @@ int main(int argc, char *argv[]) {
     } else {
       cout << "Point degenerate." << endl;
     }
+
+    smartFactor->createHessianFactor(cameras)->print("Hessian factor: ");
 
     // Reset graph and initial estimate for next iteration
     graph.resize(0);

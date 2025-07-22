@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/vio-factorsTargets.cmake")
+
+# Set the include directory variable for consumers
+set(VIO_FACTORS_INCLUDE_DIRS "@PACKAGE_INCLUDE_INSTALL_DIR@")
+
+# Optionally, set the version variable
+set(VIO_FACTORS_VERSION "@PROJECT_VERSION@")
+
+# Optionally, set the library variable (if you install a library)
+set(VIO_FACTORS_LIBRARIES vio-factors)
+
+check_required_components(vio-factors)

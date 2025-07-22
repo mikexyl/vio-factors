@@ -25,57 +25,62 @@
 namespace gtsam {
 namespace noiseModel {
 
-class ExpandingIsotropic : public Isotropic {
+/**
+ * @tparam ZDim   Residual dimensionality per observation.
+ *                2 → (u,v) pinhole mono, 3 → (u,v,uR) stereo, etc.
+ * @warning       Template parameter must match SmartFactor variant used!
+ */
+template <int ZDim = 2> class ExpandingIsotropic : public Isotropic {
 public:
-  using This = ExpandingIsotropic;
-  using shared_ptr = boost::shared_ptr<This>;
+  static_assert(ZDim > 0, "ZDim must be positive");
+  using This = ExpandingIsotropic<ZDim>;
+  using BaseType = Isotropic;
 
-  std::vector<double> sigmas_; ///< one σ per residual pair
+  std::vector<double> sigmas_; ///< one σ per observation
   mutable std::mutex mutex_;
   bool frozen_ = false;
 
-  // Private default‑ctor for serialization
-  ExpandingIsotropic() : Isotropic() {}
+  // Private default ctor for serialization
+  ExpandingIsotropic() : BaseType() {}
 
-  /* ------------------------  Helpers  ------------------------ */
-  inline void checkDims(const Eigen::Index n) const {
+  // ---------------- Helper lambdas ---------------- //
+  template <class Derived>
+  inline void scaleRowsInPlace(Eigen::MatrixBase<Derived> &M,
+                               bool whiten) const {
+    const size_t num = sigmas_.size();
+    for (size_t k = 0; k < num; ++k) {
+      const double s = whiten ? (1.0 / sigmas_[k]) : sigmas_[k];
+      for (int d = 0; d < ZDim; ++d)
+        M.row(static_cast<Eigen::Index>(k * ZDim + d)) *= s;
+    }
+  }
+  inline void checkDims(Eigen::Index n) const {
     if (static_cast<size_t>(n) != dim()) {
-      std::ostringstream oss;
-      oss << "ExpandingIsotropic: dimension mismatch, expected " << dim() << ", got " << n;
-      throw std::runtime_error(oss.str());
+      std::ostringstream ss;
+      ss << "ExpandingIsotropic: expected " << dim() << " rows, got " << n;
+      throw std::runtime_error(ss.str());
     }
   }
 
-  /* Scale the given Vector/Matrix row‑wise by inv(σ). */
-  template <class Derived>
-  void whitenRowsInPlace(Eigen::MatrixBase<Derived> &M) const {
-    for (size_t k = 0; k < sigmas_.size(); ++k)
-      M.row(static_cast<Eigen::Index>(2 * k)) /= sigmas_[k],
-          M.row(static_cast<Eigen::Index>(2 * k + 1)) /= sigmas_[k];
-  }
-  template <class Derived>
-  void unwhitenRowsInPlace(Eigen::MatrixBase<Derived> &M) const {
-    for (size_t k = 0; k < sigmas_.size(); ++k)
-      M.row(static_cast<Eigen::Index>(2 * k)) *= sigmas_[k],
-          M.row(static_cast<Eigen::Index>(2 * k + 1)) *= sigmas_[k];
-  }
-
 public:
-  /* ---------------------  Construction  --------------------- */
+  GTSAM_MAKE_ALIGNED_OPERATOR_NEW
+  using shared_ptr = boost::shared_ptr<This>;
+
+  /* ---------------- Factory helpers ---------------- */
   static shared_ptr Create() { return shared_ptr(new This()); }
-  static shared_ptr Create(size_t reserve) {
+  static shared_ptr Create(size_t reserveCount) {
     auto m = shared_ptr(new This());
-    m->sigmas_.reserve(reserve);
+    m->sigmas_.reserve(reserveCount);
     return m;
   }
 
-  /* --------------------  Mutation API  ---------------------- */
+  /* ---------------- Mutation API ------------------- */
   void pushSigma(double sigma) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (frozen_)
       throw std::runtime_error("pushSigma() after freeze()");
     sigmas_.push_back(sigma);
-    dim_ = 2 * sigmas_.size(); // update Base::dim_
+    dim_ = static_cast<int>(ZDim * sigmas_.size()); // update Base::dim_
   }
   void reserve(size_t n) { sigmas_.reserve(n); }
   void freeze() {
@@ -83,70 +88,73 @@ public:
     frozen_ = true;
   }
 
-  /* --------------------  Required API  ---------------------- */
-  /// Return dimension (override not possible – Base::dim() non‑virtual)
-  size_t dim() const { return 2 * sigmas_.size(); }
+  /* ---------------- Required API ------------------- */
+  size_t dim() const { return ZDim * sigmas_.size(); }
 
   Vector whiten(const Vector &v) const override {
     checkDims(v.size());
     Vector w(v);
-    whitenRowsInPlace(w);
+    scaleRowsInPlace(w, /*whiten*/ true);
     return w;
   }
   Vector unwhiten(const Vector &v) const override {
     checkDims(v.size());
     Vector u(v);
-    unwhitenRowsInPlace(u);
+    scaleRowsInPlace(u, /*whiten*/ false);
     return u;
   }
 
   Matrix Whiten(const Matrix &H) const override {
+    // check dimensions
+    if (H.rows() != dim())
+      throw std::runtime_error("ExpandingIsotropic: Whiten(Matrix) wrong rows");
+    if (H.cols() != dim())
+      throw std::runtime_error("ExpandingIsotropic: Whiten(Matrix) wrong cols");
+
+    // scale rows
     Matrix W(H);
-    whitenRowsInPlace(W);
+    scaleRowsInPlace(W, true);
     return W;
   }
 
-  /* In‑place helpers (non‑pure in Base, but we override for efficiency) */
-  void WhitenInPlace(Matrix &H) const override { whitenRowsInPlace(H); }
-  void WhitenInPlace(Eigen::Block<Matrix> H) const override {
-    whitenRowsInPlace(H);
+  Matrix Whiten(const Matrix &H, size_t obsIndex) const override {
+    const double s = 1.0 / sigmas_.at(obsIndex);
+    return H * s;
   }
 
-  /* ---- WhitenSystem overloads ---- */
   void WhitenSystem(std::vector<Matrix> &A, Vector &b) const override {
     checkDims(b.size());
-    whitenRowsInPlace(b);
+    scaleRowsInPlace(b, true);
     for (auto &Ai : A)
-      whitenRowsInPlace(Ai);
+      scaleRowsInPlace(Ai, true);
   }
   void WhitenSystem(Matrix &A, Vector &b) const override {
     checkDims(b.size());
-    whitenRowsInPlace(b);
-    whitenRowsInPlace(A);
+    scaleRowsInPlace(b, true);
+    scaleRowsInPlace(A, true);
   }
   void WhitenSystem(Matrix &A1, Matrix &A2, Vector &b) const override {
     checkDims(b.size());
-    whitenRowsInPlace(b);
-    whitenRowsInPlace(A1);
-    whitenRowsInPlace(A2);
+    scaleRowsInPlace(b, true);
+    scaleRowsInPlace(A1, true);
+    scaleRowsInPlace(A2, true);
   }
   void WhitenSystem(Matrix &A1, Matrix &A2, Matrix &A3,
                     Vector &b) const override {
     checkDims(b.size());
-    whitenRowsInPlace(b);
-    whitenRowsInPlace(A1);
-    whitenRowsInPlace(A2);
-    whitenRowsInPlace(A3);
+    scaleRowsInPlace(b, true);
+    scaleRowsInPlace(A1, true);
+    scaleRowsInPlace(A2, true);
+    scaleRowsInPlace(A3, true);
   }
 
-  /* Flags */
   bool isConstrained() const override { return false; }
   bool isUnit() const override { return false; }
 
-  /* Debug utilities */
+  /* ---------------- Debug ------------------------- */
   void print(const std::string &s = "") const override {
-    std::cout << s << "ExpandingIsotropicNoiseModel (" << sigmas_.size()
-              << " obs)" << std::endl;
+    std::cout << s << "ExpandingIsotropic<" << ZDim << "> with "
+              << sigmas_.size() << " obs" << std::endl;
   }
   bool equals(const Base &expected, double tol = 1e-9) const override {
     const This *e = dynamic_cast<const This *>(&expected);
@@ -159,17 +167,20 @@ public:
   }
 
 private:
-  /* -------------------  Serialization  ---------------------- */
+  /* ---------------- Serialization ----------------- */
   friend class boost::serialization::access;
   template <class ARCHIVE>
   void serialize(ARCHIVE &ar, const unsigned int /*version*/) {
     ar &boost::serialization::base_object<Base>(*this);
     ar & sigmas_;
     ar & frozen_;
-    dim_ = 2 * sigmas_.size(); // restore derived state
+    dim_ = static_cast<int>(ZDim * sigmas_.size());
   }
 };
 
+/* ---------- Convenient aliases ---------- */
+using ExpandingIsotropicMono = ExpandingIsotropic<2>;
+using ExpandingIsotropicStereo = ExpandingIsotropic<3>;
 } // namespace noiseModel
 } // namespace gtsam
 
