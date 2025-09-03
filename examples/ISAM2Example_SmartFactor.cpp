@@ -28,6 +28,9 @@ int main(int argc, char *argv[]) {
   gtsam::noiseModel::ExpandingIsotropic<2>::shared_ptr expandingNoise =
       gtsam::noiseModel::ExpandingIsotropic<2>::Create(
           10); // 2D isotropic noise model
+  expandingNoise->setDCSMapping(/*phi_min*/ 0.5, /*phi_max*/ 6.0,
+                                /*gamma*/ 1.4);
+  expandingNoise->enableDCS(true);
 
   auto measurementNoise =
       noiseModel::Isotropic::Sigma(2, 1.0); // one pixel in u and v
@@ -93,6 +96,7 @@ int main(int argc, char *argv[]) {
     // Add measurement to smart factor
     smartFactor->add(measurement, X(i));
     expandingNoise->pushSigma(1.0); // add noise for this measurement
+    expandingNoise->pushScore(1.0); // 0..1 (or call pushPhi(...) directly)
 
     // Update iSAM2
     ISAM2Result result = isam.update(graph, initialEstimate);

@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(vio-factors VERSION 0.0.1 LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 17)
+
 find_package(GTSAM REQUIRED)
 find_package(GTSAM_UNSTABLE REQUIRED)
 
