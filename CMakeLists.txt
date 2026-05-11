@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 project(vio-factors VERSION 0.0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
+option(VIO_FACTORS_BUILD_EXAMPLES "Build vio-factors examples" ON)
 
 find_package(GTSAM REQUIRED)
 find_package(GTSAM_UNSTABLE REQUIRED)
@@ -27,29 +28,31 @@ target_link_libraries(${PROJECT_NAME}
   gtsam_unstable
 )
 
-add_executable(SmartFactorExample
-  examples/ISAM2Example_SmartFactor.cpp
-)
-target_link_libraries(SmartFactorExample
-  PRIVATE
-  ${PROJECT_NAME}
-  gtsam
-  gtsam_unstable
-)
-target_include_directories(SmartFactorExample
-  PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
+if(VIO_FACTORS_BUILD_EXAMPLES)
+  add_executable(SmartFactorExample
+    examples/ISAM2Example_SmartFactor.cpp
+  )
+  target_link_libraries(SmartFactorExample
+    PRIVATE
+    ${PROJECT_NAME}
+    gtsam
+    gtsam_unstable
+  )
+  target_include_directories(SmartFactorExample
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+  )
 
-add_executable(SmartStereoFactorExample
-  examples/SmartStereoProjectionFactorExample.cpp
-)
-target_link_libraries(SmartStereoFactorExample
-  PRIVATE
-  ${PROJECT_NAME}
-  gtsam
-  gtsam_unstable
-)
+  add_executable(SmartStereoFactorExample
+    examples/SmartStereoProjectionFactorExample.cpp
+  )
+  target_link_libraries(SmartStereoFactorExample
+    PRIVATE
+    ${PROJECT_NAME}
+    gtsam
+    gtsam_unstable
+  )
+endif()
 
 
 install(DIRECTORY include/vio_factors DESTINATION include)
