@@ -9,6 +9,7 @@
 #include <gtsam/base/Vector.h>
 #include <gtsam/linear/NoiseModel.h>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <algorithm>
@@ -106,7 +107,7 @@ public:
 
 public:
   GTSAM_MAKE_ALIGNED_OPERATOR_NEW
-  using shared_ptr = boost::shared_ptr<This>;
+  using shared_ptr = std::shared_ptr<This>;
 
   /* ---------------- Factory helpers ---------------- */
   static shared_ptr Create() { return shared_ptr(new This()); }
@@ -183,8 +184,6 @@ public:
   Matrix Whiten(const Matrix &H) const override {
     if (H.rows() != dim())
       throw std::runtime_error("ExpandingIsotropic: Whiten(Matrix) wrong rows");
-    if (H.cols() != dim())
-      throw std::runtime_error("ExpandingIsotropic: Whiten(Matrix) wrong cols");
     Matrix W(H);
     scaleRowsInPlace(W, true);
     return W; // DCS not applied (no residual vector)
